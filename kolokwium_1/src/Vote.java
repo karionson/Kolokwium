@@ -36,25 +36,25 @@ public class Vote {
         location.add(locationItem);
     }
 
-    public static Vote fromCsvLine(String csvLine) {
+    public static Vote fromCsvLine(String csvLine, List<Candidate> candidates) {
         Vote vote = new Vote();
 
         String[] columns = csvLine.split(",");
         if (columns.length >= 3) {
-            for (int i = 0; i < 3 && i < columns.length; i++) {
-                vote.addLocation(columns[i].trim());
-            }
+            vote.addLocation(columns[2].trim()); // województwo
+            vote.addLocation(columns[1].trim()); // powiat
+            vote.addLocation(columns[0].trim()); // gmina
 
-            for (int i = 3; i < columns.length; i += 2) {
-                if (i + 1 < columns.length) {
-                    String candidateName = columns[i].trim();
-                    try {
-                        Integer votes = Integer.parseInt(columns[i + 1].trim());
-                        Candidate candidate = new Candidate(candidateName);
-                        vote.addVotesForCandidate(candidate, votes);
-                    } catch (NumberFormatException e) {
-                        System.err.println("Nieprawidłowa liczba głosów: " + columns[i + 1]);
-                    }
+            // Pozostałe kolumny to głosy dla kolejnych kandydatów
+            for (int i = 3; i < columns.length && i - 3 < candidates.size(); i++) {
+                try {
+                    Integer votes = Integer.parseInt(columns[i].trim());
+                    Candidate candidate = candidates.get(i - 3);
+                    vote.addVotesForCandidate(candidate, votes);
+                } catch (NumberFormatException e) {
+                    System.err.println("Nieprawidłowa liczba głosów: " + columns[i]);
+                } catch (IndexOutOfBoundsException e) {
+                    System.err.println("Brak kandydata dla kolumny: " + i);
                 }
             }
         }
@@ -63,9 +63,14 @@ public class Vote {
     }
 
     public static Vote summarize(List<Vote> votes) {
+        return summarize(votes, new ArrayList<>());
+    }
+
+    public static Vote summarize(List<Vote> votes, List<String> location) {
         Vote summaryVote = new Vote();
 
         if (votes == null || votes.isEmpty()) {
+            summaryVote.setLocation(location);
             return summaryVote;
         }
 
@@ -83,9 +88,36 @@ public class Vote {
             }
         }
 
-        summaryVote.location.clear();
+        summaryVote.setLocation(location);
 
         return summaryVote;
+    }
+
+    public static List<Vote> filterByLocation(List<Vote> votes, List<String> locationFilter) {
+        List<Vote> filteredVotes = new ArrayList<>();
+        
+        if (votes == null || locationFilter == null || locationFilter.isEmpty()) {
+            return filteredVotes;
+        }
+        
+        for (Vote vote : votes) {
+            List<String> voteLocation = vote.getLocation();
+            
+            if (voteLocation.size() >= locationFilter.size()) {
+                boolean matches = true;
+                for (int i = 0; i < locationFilter.size(); i++) {
+                    if (!voteLocation.get(i).equals(locationFilter.get(i))) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    filteredVotes.add(vote);
+                }
+            }
+        }
+        
+        return filteredVotes;
     }
 
     public Integer votes(Candidate candidate) {
@@ -104,5 +136,25 @@ public class Vote {
         }
 
         return Math.round((double) candidateVotes / totalVotes * 10000) / 100.0;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        
+        // Obliczamy sumę wszystkich głosów tylko raz (krok 11)
+        int totalVotes = votesForCandidate.values().stream()
+                .mapToInt(Integer::intValue)
+                .sum();
+        
+        for (Map.Entry<Candidate, Integer> entry : votesForCandidate.entrySet()) {
+            Candidate candidate = entry.getKey();
+            Integer votes = entry.getValue();
+            double percentage = totalVotes > 0 ? Math.round((double) votes / totalVotes * 10000) / 100.0 : 0.0;
+            
+            sb.append(candidate.name()).append(": ").append(percentage).append("%\n");
+        }
+        
+        return sb.toString();
     }
 }
